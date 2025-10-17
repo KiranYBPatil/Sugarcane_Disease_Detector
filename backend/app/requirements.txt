@@ -1,8 +1,9 @@
+python==3.12.*
 fastapi
 uvicorn
 pillow
 torch==2.5.1
-torchvision==0.24.0
+torchvision==0.20.1
 transformers==4.57.1
 scikit-learn
 numpy
