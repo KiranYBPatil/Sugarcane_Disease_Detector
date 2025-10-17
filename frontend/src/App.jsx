@@ -13,44 +13,44 @@ const Loader2 = (props) => (
 
 // Map prediction labels to visual classes
 const getDiseaseStyle = (label) => {
-    switch (label) {
-        case 'Healthy':
-            return { color: 'text-green-600', bg: 'bg-green-100', border: 'border-green-400' };
-        case 'RedRot':
-        case 'Mosaic':
-            return { color: 'text-red-600', bg: 'bg-red-100', border: 'border-red-400' };
-        case 'BacterialBlights':
-        case 'Rust':
-        case 'Yellow':
-            return { color: 'text-yellow-600', bg: 'bg-yellow-100', border: 'border-yellow-400' };
-        default:
-            return { color: 'text-gray-600', bg: 'bg-gray-100', border: 'border-gray-400' };
-    }
+    // Always return green style for all predictions (as requested)
+    return { color: 'text-green-600', bg: 'bg-green-100', border: 'border-green-400' };
 };
 
 // Assuming the correct backend URL for deployment
 const BACKEND_URL = "http://localhost:8000"; // Use Render URL for live deploy!
 
 export default function App() {
-    const [file, setFile] = useState(null);
-    const [preview, setPreview] = useState(null);
-    const [result, setResult] = useState(null);
+    // --- STATE HAS BEEN UPDATED FOR MULTIPLE FILES ---
+    const [files, setFiles] = useState([]);
+    const [previews, setPreviews] = useState([]);
+    const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(false);
     const [dragActive, setDragActive] = useState(false);
     const inputRef = React.useRef(null);
 
-    const handleFile = (f) => {
-        if (!f || !f.type.startsWith('image/')) return;
-        setFile(f);
-        setPreview(URL.createObjectURL(f));
-        setResult(null);
+    // --- HANDLES A LIST OF FILES ---
+    const handleFiles = (fileList) => {
+        if (!fileList || fileList.length === 0) return;
+
+        // Filter for images only
+        const imageFiles = Array.from(fileList).filter(f => f.type.startsWith('image/'));
+        
+        setFiles(imageFiles);
+        
+        // Clean up old object URLs from memory
+        previews.forEach(URL.revokeObjectURL);
+        // Create new URLs for the new files
+        setPreviews(imageFiles.map(f => URL.createObjectURL(f)));
+        
+        setResults([]); // Clear previous results
     };
 
     const handleDrop = (e) => {
         e.preventDefault();
         setDragActive(false);
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-            handleFile(e.dataTransfer.files[0]);
+        if (e.dataTransfer.files) {
+            handleFiles(e.dataTransfer.files); // Use the new handler
         }
     };
 
@@ -64,33 +64,44 @@ export default function App() {
         }
     };
 
+    // --- UPDATED TO UPLOAD ALL FILES IN THE LIST ---
     const upload = async () => {
-        if (!file) return;
+        if (files.length === 0) return;
         setLoading(true);
-        const formData = new FormData();
-        formData.append("file", file);
+        setResults([]); // Clear old results
 
-        try {
-            const res = await fetch(`${BACKEND_URL}/predict`, {
-                method: "POST",
-                body: formData,
-            });
-            
-            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        const predictions = [];
 
-            const data = await res.json();
-            setResult(data);
-        } catch (e) {
-            console.error("Error connecting to backend:", e);
-            setResult({ prediction: "Connection Error", confidence: 0.0, error: true });
-        } finally {
-            setLoading(false);
+        // Loop through each file and upload it
+        for (const file of files) {
+            const formData = new FormData();
+            formData.append("file", file);
+
+            try {
+                const res = await fetch(`${BACKEND_URL}/predict`, {
+                    method: "POST",
+                    body: formData,
+                });
+                
+                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+
+                const data = await res.json();
+                // Store result with its corresponding file name
+                predictions.push({ file: file.name, ...data });
+            } catch (e) {
+                console.error("Error connecting to backend:", e);
+                predictions.push({ 
+                    file: file.name, 
+                    prediction: "Connection Error", 
+                    confidence: 0.0, 
+                    error: true 
+                });
+            }
         }
+        
+        setResults(predictions); // Set the array of all results
+        setLoading(false);
     };
-
-    const style = getDiseaseStyle(result?.prediction);
-    const confidencePercent = result ? (result.confidence * 100).toFixed(2) : 0;
-    const isError = result?.error;
 
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col items-center p-4 font-inter">
@@ -114,19 +125,35 @@ export default function App() {
                         ref={inputRef} 
                         type="file" 
                         accept="image/*" 
-                        onChange={(e) => handleFile(e.target.files[0])} 
+                        multiple // <<< CHANGED: Allow multiple files
+                        onChange={(e) => handleFiles(e.target.files)} 
                         className="hidden" 
                     />
                     
-                    {preview ? (
-                        <div className="flex flex-col items-center">
-                            <img src={preview} alt="Image Preview" className="w-full max-h-80 object-contain rounded-lg shadow-md mb-4"/>
-                            <p className="text-sm text-gray-600 truncate max-w-full">{file.name}</p>
+                    {previews.length > 0 ? (
+                        // <<< CHANGED: Show a grid of previews
+                        <div 
+                            className="flex flex-col items-center cursor-pointer"
+                            onClick={() => inputRef.current.click()}
+                        >
+                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 mb-4">
+                                {previews.map((src, index) => (
+                                    <img 
+                                        key={index} 
+                                        src={src} 
+                                        alt={`Preview ${index}`} 
+                                        className="w-full h-20 object-cover rounded-lg shadow-md"
+                                    />
+                                ))}
+                            </div>
+                            <p className="text-sm text-gray-600">
+                                {files.length} image(s) selected. Click to change.
+                            </p>
                         </div>
                     ) : (
                         <div className="p-8 cursor-pointer" onClick={() => inputRef.current.click()}>
                             <UploadCloud className="w-10 h-10 mx-auto text-green-500 mb-2"/>
-                            <p className="text-gray-700 font-medium">Drag & Drop Image Here</p>
+                            <p className="text-gray-700 font-medium">Drag & Drop Images Here</p>
                             <p className="text-sm text-gray-500">or click to browse (JPG, PNG)</p>
                         </div>
                     )}
@@ -134,45 +161,62 @@ export default function App() {
 
                 <button 
                     onClick={upload} 
-                    disabled={!file || loading}
+                    disabled={files.length === 0 || loading}
                     className={`w-full py-3 px-4 rounded-lg font-bold transition-colors duration-200 shadow-md ${
-                        !file || loading 
+                        files.length === 0 || loading 
                             ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
                             : 'bg-green-600 text-white hover:bg-green-700 hover:shadow-lg'
                     } flex items-center justify-center space-x-2`}
                 >
                     {loading && <Loader2 className="w-5 h-5 animate-spin"/>}
-                    <span>{loading ? "Analyzing Sugarcane..." : "Detect Disease"}</span>
+                    {/* <<< CHANGED: Updated button text */}
+                    <span>{loading ? `Analyzing ${files.length} images...` : `Detect Disease (${files.length})`}</span>
                 </button>
 
-                {result && (
-                    <div className={`mt-6 p-4 rounded-lg border-2 ${style.border} ${style.bg} transition-all duration-500 shadow-inner`}>
-                        <h3 className={`text-xl font-bold ${isError ? 'text-red-600' : style.color} mb-1 flex items-center justify-between`}>
-                            {isError ? 'Detection Failed' : 'Prediction Result'}
-                            {!isError && <span className="text-sm text-gray-600">Confidence</span>}
-                        </h3>
+                {/* <<< CHANGED: Map over all results and render a block for each */}
+                {results.length > 0 && (
+                    <div className="mt-6 space-y-4">
+                        <h2 className="text-xl font-bold text-gray-800">Prediction Results</h2>
+                        {results.map((result, index) => {
+                            const style = getDiseaseStyle(result?.prediction);
+                            const confidencePercent = (result.confidence * 100).toFixed(2);
+                            const isError = result?.error;
+                            const barColor = style.color ? style.color.replace('text-', 'bg-') : 'bg-gray-600';
+                            
+                            return (
+                                <div key={index} className={`p-4 rounded-lg border-2 ${style.border} ${style.bg} transition-all duration-500 shadow-inner`}>
+                                    {/* Show the file name for context */}
+                                    <p className="text-sm font-medium text-gray-700 truncate mb-2">{result.file}</p>
+                                    
+                                    <h3 className={`text-lg font-bold ${isError ? 'text-red-600' : style.color} mb-1 flex items-center justify-between`}>
+                                        {isError ? 'Detection Failed' : 'Prediction Result'}
+                                        {!isError && <span className="text-sm text-gray-600">Confidence</span>}
+                                    </h3>
 
-                        <p className={`text-3xl font-extrabold ${isError ? 'text-red-800' : style.color} mb-4`}>
-                            {result.prediction}
-                        </p>
-                        
-                        {!isError && (
-                            <>
-                                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                                    <div 
-                                        className={`h-2.5 rounded-full ${style.color === 'text-green-600' ? 'bg-green-600' : 'bg-red-600'}`} 
-                                        style={{ width: `${confidencePercent}%` }}
-                                    ></div>
+                                    <p className={`text-2xl font-extrabold ${isError ? 'text-red-800' : style.color} mb-4`}>
+                                        {result.prediction}
+                                    </p>
+                                    
+                                    {!isError && (
+                                        <>
+                                            <div className="w-full bg-gray-200 rounded-full h-2.5">
+                                                <div 
+                                                    className={`h-2.5 rounded-full ${barColor}`} 
+                                                    style={{ width: `${confidencePercent}%` }}
+                                                ></div>
+                                            </div>
+                                            <p className={`text-base font-semibold mt-2 ${style.color}`}>
+                                                {confidencePercent}%
+                                            </p>
+                                        </>
+                                    )}
+
+                                    {isError && (
+                                        <p className="text-sm text-red-700">Could not connect to the FastAPI backend.</p>
+                                    )}
                                 </div>
-                                <p className={`text-base font-semibold mt-2 ${style.color}`}>
-                                    {confidencePercent}%
-                                </p>
-                            </>
-                        )}
-
-                        {isError && (
-                            <p className="text-sm text-red-700">Could not connect to the FastAPI backend. Check the server is running on {BACKEND_URL}.</p>
-                        )}
+                            );
+                        })}
                     </div>
                 )}
             </main>
