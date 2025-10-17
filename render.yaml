@@ -3,5 +3,5 @@ services:
     name: sugarcane-disease-detector
     env: python
     pythonVersion: 3.11.5
-    buildCommand: pip install -r app/requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    buildCommand: pip install -r backend/app/requirements.txt
+    startCommand: uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
